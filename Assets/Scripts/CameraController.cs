@@ -4,18 +4,17 @@ using UnityEngine;
 
 public class CameraController : MonoBehaviour {
 
-    public Transform target;
-    public Vector3 offset;
-    public bool useOffsetValues;
+    [SerializeField] private Transform target;
+    [SerializeField] private Vector3 offset;
+    [SerializeField] private bool useOffsetValues;
 
-    public float rotateSpeed;
-    public Transform pivot;
+    [SerializeField] private float rotateSpeed;
+    [SerializeField] private Transform pivot;
 
-    public float maxViewAngle;
-    public float minViewAngle;
+    [SerializeField] private float maxViewAngle;
+    [SerializeField] private float minViewAngle;
 
-    public bool InvertY;
-
+    [SerializeField] private bool InvertY;
 
     // Start is called before the first frame update
     void Start()
@@ -60,7 +59,7 @@ public class CameraController : MonoBehaviour {
 
         }
 
-        if(pivot.rotation.eulerAngles.x > 180 && pivot.rotation.eulerAngles.x < 360f + minViewAngle)
+        if(pivot.rotation.eulerAngles.x > 180f && pivot.rotation.eulerAngles.x < 360f + minViewAngle)
 		{
             pivot.rotation = Quaternion.Euler(315f + minViewAngle, 0, 0);
 		}
