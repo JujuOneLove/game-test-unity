@@ -9,19 +9,23 @@ public class PlayerController : MonoBehaviour
 {
     [SerializeField] private float moveSpeed;
     [SerializeField] private float jumpForce;
-    [SerializeField] private CharacterController controller;
+    [SerializeField] private float distanceWithFloor = 1.1f;
+    [SerializeField] private Rigidbody rigidbody;
+
+    private Controls _controls;
 
     private Vector3 _moveDirection;
     private bool _isMove, _isDancing, _initTargetTimeDancing, _canHurt = false;
     private float _targetTimeDancing;
-    [SerializeField] private float gravityScale;
+
+    private bool _isJumping;
 
     [SerializeField] private Animator anim;
-    [SerializeField] private Transform pivot;
+    [SerializeField] private Camera camera;
     [SerializeField] private float rotateSpeed;
 
     [SerializeField] private GameObject playerModel;
-    private int _tolerance = 0;
+    private float _tolerance = 0f;
     private static readonly int Speed = Animator.StringToHash("Speed");
     private static readonly int IsGrounded = Animator.StringToHash("isGrounded");
     private static readonly int IsDancing = Animator.StringToHash("isDancing");
@@ -32,37 +36,113 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private AudioClip speak2;
 
     private AudioSource _source;
-
+    
     void Awake()
     {
         _source = GetComponent<AudioSource>();
+        _controls = new Controls();
     }
 
     // Start is called before the first frame update
     void Start()
     {
-        controller = GetComponent<CharacterController>();
+        rigidbody = GetComponent<Rigidbody>();
         InvokeRepeating("Speak", 0f, 2.5f);
     }
 
     // Update is called once per frame
     void Update()
     {
-        float yStore = _moveDirection.y;
-        _moveDirection = (transform.forward * Input.GetAxis("Vertical")) +
-                         (transform.right * Input.GetAxis("Horizontal"));
-        _moveDirection = _moveDirection.normalized * moveSpeed;
-        _moveDirection.y = yStore;
-        _isMove = Mathf.Abs(Input.GetAxis("Vertical") + Mathf.Abs(Input.GetAxis("Horizontal"))) > 0f;
+        Vector2 movementInput = _controls.Player.Movement.ReadValue<Vector2>();
+        MoveCamera(movementInput);
 
-        if (controller.isGrounded)
+        ActionsDancingScream();
+
+        Animation(movementInput);
+    }
+
+    private void FixedUpdate()
+    {
+        Vector2 movementInput = _controls.Player.Movement.ReadValue<Vector2>();
+
+        Move(movementInput);
+    }
+
+    private void LateUpdate()
+    {
+        Vector2 movementInput = _controls.Player.Movement.ReadValue<Vector2>();
+    }
+
+    private void OnEnable() => _controls.Player.Enable();
+
+    private void OnDisable() => _controls.Player.Disable();
+    
+    public void Jump()
+    {
+        if (Grounded())
         {
-            _moveDirection.y = 0f;
-            if (Input.GetButtonDown("Jump"))
+            _isJumping = true;
+        }
+    }
+
+    private void Speak()
+    {
+        if (Grounded() && !_source.isPlaying)
+        {
+            if (Random.Range(0, 100) % 2 != 0)
             {
-                _moveDirection.y = jumpForce;
+                _source.PlayOneShot(speak1);
             }
-            
+            else _source.PlayOneShot(speak2);
+        }
+    }
+
+    private void Scream()
+    {
+        if (!_source.isPlaying && transform.position.y <= -5f)
+        {
+            _source.PlayOneShot(scream);
+        }
+    }
+
+    private void Move(Vector2 movementInput)
+    {
+        if (_isJumping)
+        {
+            _isJumping = false;
+            rigidbody.AddForce(Vector3.up * jumpForce);
+        }
+
+        _isMove = Mathf.Abs(movementInput.y + Mathf.Abs(movementInput.x)) > 0f;
+        _moveDirection = transform.TransformDirection(new Vector3(movementInput.x, 0f, movementInput.y));
+        _moveDirection = _moveDirection.normalized * moveSpeed;
+       
+        rigidbody.MovePosition(transform.position + _moveDirection * Time.fixedDeltaTime);
+    }
+
+    private void Animation(Vector2 movementInput)
+    {
+        anim.SetBool(IsGrounded, Grounded());
+        anim.SetBool(IsDancing, _isDancing);
+        anim.SetFloat(Speed, (Mathf.Abs(movementInput.y) + Mathf.Abs(movementInput.x)));
+    }
+
+    private void MoveCamera(Vector2 movementInput)
+    {
+        //Move the player in different directions based on look direction
+        if (Math.Abs(movementInput.x) > _tolerance || Math.Abs(movementInput.y) > _tolerance)
+        {
+            transform.rotation = Quaternion.Euler(0f, camera.transform.rotation.eulerAngles.y, 0f);
+            Quaternion newRotation = Quaternion.LookRotation(new Vector3(_moveDirection.x, 0f, _moveDirection.z));
+            playerModel.transform.rotation = Quaternion.Slerp(playerModel.transform.rotation, newRotation,
+                rotateSpeed * Time.deltaTime);
+        }
+    }
+
+    private void ActionsDancingScream()
+    {
+        if (Grounded())
+        {
             if (!_isMove && !_isDancing && !_initTargetTimeDancing)
             {
                 _targetTimeDancing = 10f;
@@ -75,43 +155,27 @@ public class PlayerController : MonoBehaviour
             else _initTargetTimeDancing = false;
 
             _isDancing = _targetTimeDancing <= 0.0f && !_isMove;
+
+            if (_canHurt)
+            {
+                _source.PlayOneShot(hurt);
+                _canHurt = false;
+            }
         }
         else
         {
-            if (!_source.isPlaying && transform.position.y <= -5f)
-            {
-                _source.PlayOneShot(scream);
-            }
+            Scream();
             _initTargetTimeDancing = false;
             _isDancing = false;
+            _canHurt = true;
         }
-
-        _moveDirection.y = _moveDirection.y + (Physics.gravity.y * gravityScale * Time.deltaTime);
-        controller.Move(_moveDirection * Time.deltaTime);
-
-        //Move the player in different directions based on look direction
-        if (Math.Abs(Input.GetAxis("Horizontal")) > _tolerance || Math.Abs(Input.GetAxis("Vertical")) > _tolerance)
-        {
-            transform.rotation = Quaternion.Euler(0f, pivot.rotation.eulerAngles.y, 0f);
-            Quaternion newRotation = Quaternion.LookRotation(new Vector3(_moveDirection.x, 0f, _moveDirection.z));
-            playerModel.transform.rotation = Quaternion.Slerp(playerModel.transform.rotation, newRotation,
-                rotateSpeed * Time.deltaTime);
-        }
-
-        anim.SetBool(IsGrounded, controller.isGrounded);
-        anim.SetBool(IsDancing, _isDancing);
-        anim.SetFloat(Speed, (Mathf.Abs(Input.GetAxis("Vertical")) + Mathf.Abs(Input.GetAxis("Horizontal"))));
     }
-
-    void Speak()
+    
+    private bool Grounded()
     {
-        if (controller.isGrounded && !_source.isPlaying)
-        {
-            if (Random.Range(0, 100) % 2 != 0)
-            {
-                _source.PlayOneShot(speak1);
-            }
-            else _source.PlayOneShot(speak2);
-        }
+        if (Physics.Raycast(transform.position, Vector3.down, out var hit, Mathf.Infinity))
+            return hit.distance <= distanceWithFloor;
+
+        return false;
     }
 }
